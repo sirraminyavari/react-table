@@ -3,14 +3,14 @@ export * from '@tanstack/table-core'
 
 import {
   createTableInstance,
-  PartialKeys,
-  Options,
+  TableOptions,
   TableInstance,
-  PartialGenerics,
-  CreateTableFactoryOptions,
   Table,
-  init,
-  AnyGenerics,
+  TableGenerics,
+  createTableFactory,
+  Overwrite,
+  PartialKeys,
+  TableOptionsResolved,
 } from '@tanstack/table-core'
 
 export type Renderable<TProps> =
@@ -18,13 +18,20 @@ export type Renderable<TProps> =
   | React.FunctionComponent<TProps>
   | React.Component<TProps>
 
-export const render = <TProps extends {}>(
+export type Render = <TProps extends {}>(
   Comp: Renderable<TProps>,
   props: TProps
-): React.ReactNode =>
-  !Comp ? null : isReactComponent(Comp) ? <Comp {...props} /> : Comp
+) => React.ReactNode | JSX.Element
 
-export type Render = typeof render
+export type ReactTableGenerics = Overwrite<
+  TableGenerics,
+  { Renderer: Render; Rendered: ReturnType<Render> }
+>
+
+//
+
+export const render: Render = (Comp, props) =>
+  !Comp ? null : isReactComponent(Comp) ? <Comp {...props} /> : Comp
 
 function isReactComponent(component: unknown): component is React.FC {
   return (
@@ -52,23 +59,21 @@ function isExoticComponent(component: any) {
   )
 }
 
-const { createTable, createTableFactory } = init({ render })
+export const createTable = createTableFactory({ render })
 
-export { createTable, createTableFactory }
+// const useIsomorphicLayoutEffect =
+//   typeof document !== 'undefined' ? React.useLayoutEffect : React.useEffect
 
-export function useTable<TGenerics extends AnyGenerics>(
+export type UseTableInstanceOptions<TGenerics extends ReactTableGenerics> =
+  TableOptions<TGenerics>
+
+export function useTableInstance<TGenerics extends ReactTableGenerics>(
   table: Table<TGenerics>,
-  options: PartialKeys<
-    Omit<
-      Options<TGenerics>,
-      keyof CreateTableFactoryOptions<any, any, any, any>
-    >,
-    'state' | 'onStateChange'
-  >
+  options: UseTableInstanceOptions<TGenerics>
 ): TableInstance<TGenerics> {
   // Compose in the generic options to the user options
-  const resolvedOptions: Options<TGenerics> = {
-    ...(table.__options ?? {}),
+  const resolvedOptions: TableOptionsResolved<TGenerics> = {
+    ...table.options,
     state: {}, // Dummy state
     onStateChange: () => {}, // noop
     render,
@@ -76,16 +81,18 @@ export function useTable<TGenerics extends AnyGenerics>(
   }
 
   // Create a new table instance and store it in state
-  const [instance] = React.useState(() =>
-    createTableInstance<TGenerics>(resolvedOptions)
-  )
+  const [instanceRef] = React.useState(() => ({
+    current: createTableInstance<TGenerics>(resolvedOptions),
+  }))
 
   // By default, manage table state here using the instance's initial state
-  const [state, setState] = React.useState(() => instance.initialState)
+  const [state, setState] = React.useState(
+    () => instanceRef.current.initialState
+  )
 
   // Compose the default state above with any user state. This will allow the user
   // to only control a subset of the state if desired.
-  instance.setOptions(prev => ({
+  instanceRef.current.setOptions(prev => ({
     ...prev,
     ...options,
     state: {
@@ -100,5 +107,5 @@ export function useTable<TGenerics extends AnyGenerics>(
     },
   }))
 
-  return instance
+  return instanceRef.current
 }

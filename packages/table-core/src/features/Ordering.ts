@@ -1,21 +1,21 @@
-import { functionalUpdate, makeStateUpdater, memo } from '../utils'
+import { makeStateUpdater, memo } from '../utils'
 
 import {
   TableInstance,
   OnChangeFn,
   Updater,
   Column,
-  AnyGenerics,
-  PartialGenerics,
+  TableGenerics,
 } from '../types'
 
-import { Grouping } from './Grouping'
-
-export type ColumnOrderState = string[]
+import { Grouping, orderColumns } from './Grouping'
+import { TableFeature } from '../core/instance'
 
 export type ColumnOrderTableState = {
   columnOrder: ColumnOrderState
 }
+
+export type ColumnOrderState = string[]
 
 export type ColumnOrderOptions = {
   onColumnOrderChange?: OnChangeFn<ColumnOrderState>
@@ -25,22 +25,25 @@ export type ColumnOrderDefaultOptions = {
   onColumnOrderChange: OnChangeFn<ColumnOrderState>
 }
 
-export type ColumnOrderInstance<TGenerics extends PartialGenerics> = {
+export type ColumnOrderInstance<TGenerics extends TableGenerics> = {
   setColumnOrder: (updater: Updater<ColumnOrderState>) => void
-  resetColumnOrder: () => void
-  getOrderColumnsFn: () => (columns: Column<TGenerics>[]) => Column<TGenerics>[]
+  resetColumnOrder: (defaultState?: boolean) => void
+  _getOrderColumnsFn: () => (
+    columns: Column<TGenerics>[]
+  ) => Column<TGenerics>[]
 }
 
 //
 
-export const Ordering = {
-  getInitialState: (): ColumnOrderTableState => {
+export const Ordering: TableFeature = {
+  getInitialState: (state): ColumnOrderTableState => {
     return {
       columnOrder: [],
+      ...state,
     }
   },
 
-  getDefaultOptions: <TGenerics extends PartialGenerics>(
+  getDefaultOptions: <TGenerics extends TableGenerics>(
     instance: TableInstance<TGenerics>
   ): ColumnOrderDefaultOptions => {
     return {
@@ -48,19 +51,18 @@ export const Ordering = {
     }
   },
 
-  getInstance: <TGenerics extends PartialGenerics>(
+  createInstance: <TGenerics extends TableGenerics>(
     instance: TableInstance<TGenerics>
   ): ColumnOrderInstance<TGenerics> => {
     return {
       setColumnOrder: updater =>
-        instance.options.onColumnOrderChange?.(
-          updater,
-          functionalUpdate(updater, instance.getState().columnOrder)
-        ),
-      resetColumnOrder: () => {
-        instance.setColumnOrder(instance.initialState.columnOrder ?? [])
+        instance.options.onColumnOrderChange?.(updater),
+      resetColumnOrder: defaultState => {
+        instance.setColumnOrder(
+          defaultState ? [] : instance.initialState.columnOrder ?? []
+        )
       },
-      getOrderColumnsFn: memo(
+      _getOrderColumnsFn: memo(
         () => [
           instance.getState().columnOrder,
           instance.getState().grouping,
@@ -97,14 +99,10 @@ export const Ordering = {
             orderedColumns = [...orderedColumns, ...columnsCopy]
           }
 
-          return Grouping.orderColumns(
-            orderedColumns,
-            grouping,
-            groupedColumnMode
-          )
+          return orderColumns(orderedColumns, grouping, groupedColumnMode)
         },
         {
-          key: 'getOrderColumnsFn',
+          key: process.env.NODE_ENV === 'development' && 'getOrderColumnsFn',
           // debug: () => instance.options.debugAll ?? instance.options.debugTable,
         }
       ),

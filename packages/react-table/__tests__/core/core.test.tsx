@@ -1,11 +1,15 @@
 import * as React from 'react'
 
-// import { renderHook } from '@testing-library/react-hooks'
-import * as RTL from '@testing-library/react'
-import { createTable, useTable } from '@tanstack/react-table'
 import { act, renderHook } from '@testing-library/react-hooks'
+import * as RTL from '@testing-library/react'
+import '@testing-library/jest-dom'
+import {
+  createTable,
+  useTableInstance,
+  getCoreRowModel,
+} from '@tanstack/react-table'
 
-type Row = {
+type Person = {
   firstName: string
   lastName: string
   age: number
@@ -14,9 +18,9 @@ type Row = {
   progress: number
 }
 
-const table = createTable<Row>()
+const table = createTable().setRowType<Person>()
 
-const defaultData: Row[] = [
+const defaultData: Person[] = [
   {
     firstName: 'tanner',
     lastName: 'linsley',
@@ -43,19 +47,19 @@ const defaultData: Row[] = [
   },
 ]
 
-const defaultColumns = table.createColumns([
+const defaultColumns = [
   table.createGroup({
     header: 'Name',
     footer: props => props.column.id,
     columns: [
       table.createDataColumn('firstName', {
-        cell: info => info.value,
+        cell: info => info.getValue(),
         footer: props => props.column.id,
       }),
       table.createDataColumn(row => row.lastName, {
         id: 'lastName',
-        cell: info => info.value,
-        header: <span>Last Name</span>,
+        cell: info => info.getValue(),
+        header: () => <span>Last Name</span>,
         footer: props => props.column.id,
       }),
     ],
@@ -87,12 +91,12 @@ const defaultColumns = table.createColumns([
       }),
     ],
   }),
-])
+]
 
 describe('core', () => {
   it('renders a table with markup', () => {
     const Table = () => {
-      const [data] = React.useState<Row[]>(() => [...defaultData])
+      const [data] = React.useState<Person[]>(() => [...defaultData])
       const [columns] = React.useState<typeof defaultColumns>(() => [
         ...defaultColumns,
       ])
@@ -100,44 +104,45 @@ describe('core', () => {
 
       const rerender = React.useReducer(() => ({}), {})[1]
 
-      const instance = useTable(table, {
+      const instance = useTableInstance(table, {
         data,
         columns,
         onColumnVisibilityChange: setColumnVisibility,
         state: {
           columnVisibility,
         },
+        getCoreRowModel: getCoreRowModel(),
         // debug: true,
       })
 
       return (
         <div className="p-2">
-          <table {...instance.getTableProps()}>
+          <table>
             <thead>
               {instance.getHeaderGroups().map(headerGroup => (
-                <tr {...headerGroup.getHeaderGroupProps()}>
+                <tr key={headerGroup.id}>
                   {headerGroup.headers.map(header => (
-                    <th {...header.getHeaderProps()}>
+                    <th key={header.id} colSpan={header.colSpan}>
                       {header.isPlaceholder ? null : header.renderHeader()}
                     </th>
                   ))}
                 </tr>
               ))}
             </thead>
-            <tbody {...instance.getTableBodyProps()}>
+            <tbody>
               {instance.getRowModel().rows.map(row => (
-                <tr {...row.getRowProps()}>
+                <tr key={row.id}>
                   {row.getVisibleCells().map(cell => (
-                    <td {...cell.getCellProps()}>{cell.renderCell()}</td>
+                    <td key={cell.id}>{cell.renderCell()}</td>
                   ))}
                 </tr>
               ))}
             </tbody>
             <tfoot>
               {instance.getFooterGroups().map(footerGroup => (
-                <tr {...footerGroup.getFooterGroupProps()}>
+                <tr key={footerGroup.id}>
                   {footerGroup.headers.map(header => (
-                    <th {...header.getFooterProps()}>
+                    <th key={header.id} colSpan={header.colSpan}>
                       {header.isPlaceholder ? null : header.renderFooter()}
                     </th>
                   ))}
@@ -157,14 +162,13 @@ describe('core', () => {
 
     const rendered = RTL.render(<Table />)
 
-    // RTL.screen.logTestingPlaygroundURL();
+    // RTL.screen.logTestingPlaygroundURL()
 
     RTL.screen.getByRole('table')
     expect(RTL.screen.getAllByRole('rowgroup').length).toEqual(3)
     expect(RTL.screen.getAllByRole('row').length).toEqual(9)
-    expect(RTL.screen.getAllByRole('columnheader').length).toEqual(12)
-    expect(RTL.screen.getAllByRole('columnfooter').length).toEqual(12)
-    expect(RTL.screen.getAllByRole('gridcell').length).toEqual(18)
+    expect(RTL.screen.getAllByRole('columnheader').length).toEqual(24)
+    expect(RTL.screen.getAllByRole('cell').length).toEqual(18)
 
     expect(
       Array.from(rendered.container.querySelectorAll('thead > tr')).map(d =>
@@ -195,9 +199,10 @@ describe('core', () => {
     const { result } = renderHook(() => {
       const rerender = React.useReducer(() => ({}), {})[1]
 
-      const instance = useTable(table, {
+      const instance = useTableInstance(table, {
         data: defaultData,
         columns: defaultColumns,
+        getCoreRowModel: getCoreRowModel(),
       })
 
       return {
@@ -221,9 +226,10 @@ describe('core', () => {
     const { result } = renderHook(() => {
       const rerender = React.useReducer(() => ({}), {})[1]
 
-      const instance = useTable(table, {
+      const instance = useTableInstance(table, {
         data: defaultData,
         columns: defaultColumns,
+        getCoreRowModel: getCoreRowModel(),
       })
 
       return {

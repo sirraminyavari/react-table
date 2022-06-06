@@ -1,15 +1,13 @@
+import { TableFeature } from '../core/instance'
 import {
-  Getter,
   OnChangeFn,
-  AnyGenerics,
-  PartialGenerics,
-  PropGetterValue,
+  TableGenerics,
   TableInstance,
   Row,
   RowModel,
   Updater,
 } from '../types'
-import { functionalUpdate, makeStateUpdater, memo, propGetter } from '../utils'
+import { makeStateUpdater, memo } from '../utils'
 
 export type RowSelectionState = Record<string, boolean>
 
@@ -17,19 +15,18 @@ export type RowSelectionTableState = {
   rowSelection: RowSelectionState
 }
 
-export type RowSelectionOptions<TGenerics extends PartialGenerics> = {
-  onRowSelectionChange?: OnChangeFn<RowSelectionState>
-  autoResetRowSelection?: boolean
+export type RowSelectionOptions<TGenerics extends TableGenerics> = {
   enableRowSelection?: boolean | ((row: Row<TGenerics>) => boolean)
   enableMultiRowSelection?: boolean | ((row: Row<TGenerics>) => boolean)
   enableSubRowSelection?: boolean | ((row: Row<TGenerics>) => boolean)
+  onRowSelectionChange?: OnChangeFn<RowSelectionState>
   // enableGroupingRowSelection?:
   //   | boolean
   //   | ((
   //       row: Row<TGenerics>
   //     ) => boolean)
-  // isAdditiveSelectEvent?: (e: MouseEvent | TouchEvent) => boolean
-  // isInclusiveSelectEvent?: (e: MouseEvent | TouchEvent) => boolean
+  // isAdditiveSelectEvent?: (e: unknown) => boolean
+  // isInclusiveSelectEvent?: (e: unknown) => boolean
   // selectRowsFn?: (
   //   instance: TableInstance<
   //     TData,
@@ -42,49 +39,21 @@ export type RowSelectionOptions<TGenerics extends PartialGenerics> = {
   // ) => RowModel<TGenerics>
 }
 
-type ToggleRowSelectedProps = {
-  onChange?: (e: MouseEvent | TouchEvent) => void
-  checked?: boolean
-  title?: string
-  indeterminate?: boolean
-}
-
 export type RowSelectionRow = {
   getIsSelected: () => boolean
   getIsSomeSelected: () => boolean
   getCanSelect: () => boolean
   getCanMultiSelect: () => boolean
+  getCanSelectSubRows: () => boolean
   toggleSelected: (value?: boolean) => void
-  getToggleSelectedProps: <TGetter extends Getter<ToggleRowSelectedProps>>(
-    userProps?: TGetter
-  ) => undefined | PropGetterValue<ToggleRowSelectedProps, TGetter>
+  getToggleSelectedHandler: () => (event: unknown) => void
 }
 
-export type RowSelectionInstance<TGenerics extends PartialGenerics> = {
-  _notifyRowSelectionReset: () => void
-  getToggleRowSelectedProps: <TGetter extends Getter<ToggleRowSelectedProps>>(
-    rowId: string,
-    userProps?: TGetter
-  ) => undefined | PropGetterValue<ToggleRowSelectedProps, TGetter>
-  getToggleAllRowsSelectedProps: <
-    TGetter extends Getter<ToggleRowSelectedProps>
-  >(
-    userProps?: TGetter
-  ) => undefined | PropGetterValue<ToggleRowSelectedProps, TGetter>
-  getToggleAllPageRowsSelectedProps: <
-    TGetter extends Getter<ToggleRowSelectedProps>
-  >(
-    userProps?: TGetter
-  ) => undefined | PropGetterValue<ToggleRowSelectedProps, TGetter>
+export type RowSelectionInstance<TGenerics extends TableGenerics> = {
+  getToggleAllRowsSelectedHandler: () => (event: unknown) => void
+  getToggleAllPageRowsSelectedHandler: () => (event: unknown) => void
   setRowSelection: (updater: Updater<RowSelectionState>) => void
-  resetRowSelection: () => void
-  toggleRowSelected: (rowId: string, value?: boolean) => void
-  getRowCanSelect: (rowId: string) => boolean
-  getRowCanSelectSubRows: (rowId: string) => boolean
-  getRowCanMultiSelect: (rowId: string) => boolean
-  // getGroupingRowCanSelect: (rowId: string) => boolean
-  getRowIsSelected: (rowId: string) => boolean
-  getRowIsSomeSelected: (rowId: string) => boolean
+  resetRowSelection: (defaultState?: boolean) => void
   getIsAllRowsSelected: () => boolean
   getIsAllPageRowsSelected: () => boolean
   getIsSomeRowsSelected: () => boolean
@@ -99,60 +68,38 @@ export type RowSelectionInstance<TGenerics extends PartialGenerics> = {
 
 //
 
-export const RowSelection = {
-  getInitialState: (): RowSelectionTableState => {
+export const RowSelection: TableFeature = {
+  getInitialState: (state): RowSelectionTableState => {
     return {
       rowSelection: {},
+      ...state,
     }
   },
 
-  getDefaultOptions: <TGenerics extends PartialGenerics>(
+  getDefaultOptions: <TGenerics extends TableGenerics>(
     instance: TableInstance<TGenerics>
   ): RowSelectionOptions<TGenerics> => {
     return {
       onRowSelectionChange: makeStateUpdater('rowSelection', instance),
-      autoResetRowSelection: true,
       enableRowSelection: true,
       enableMultiRowSelection: true,
       enableSubRowSelection: true,
       // enableGroupingRowSelection: false,
-      // isAdditiveSelectEvent: (e: MouseEvent | TouchEvent) => !!e.metaKey,
-      // isInclusiveSelectEvent: (e: MouseEvent | TouchEvent) => !!e.shiftKey,
+      // isAdditiveSelectEvent: (e: unknown) => !!e.metaKey,
+      // isInclusiveSelectEvent: (e: unknown) => !!e.shiftKey,
     }
   },
 
-  getInstance: <TGenerics extends PartialGenerics>(
+  createInstance: <TGenerics extends TableGenerics>(
     instance: TableInstance<TGenerics>
   ): RowSelectionInstance<TGenerics> => {
-    let registered = false
-
-    // const pageRows = instance.getPageRows()
-
     return {
-      _notifyRowSelectionReset: () => {
-        if (!registered) {
-          registered = true
-          return
-        }
-
-        if (instance.options.autoResetAll === false) {
-          return
-        }
-
-        if (
-          instance.options.autoResetAll === true ||
-          instance.options.autoResetRowSelection
-        ) {
-          instance.resetRowSelection()
-        }
-      },
       setRowSelection: updater =>
-        instance.options.onRowSelectionChange?.(
-          updater,
-          functionalUpdate(updater, instance.getState().rowSelection)
+        instance.options.onRowSelectionChange?.(updater),
+      resetRowSelection: defaultState =>
+        instance.setRowSelection(
+          defaultState ? {} : instance.initialState.rowSelection ?? {}
         ),
-      resetRowSelection: () =>
-        instance.setRowSelection(instance.initialState.rowSelection ?? {}),
       toggleAllRowsSelected: value => {
         instance.setRowSelection(old => {
           value =
@@ -160,9 +107,7 @@ export const RowSelection = {
               ? value
               : !instance.getIsAllRowsSelected()
 
-          // Only remove/add the rows that are visible on the screen
-          //  Leave all the other rows that are selected alone.
-          const rowSelection = Object.assign({}, old)
+          const rowSelection = { ...old }
 
           const preGroupedFlatRows = instance.getPreGroupedRowModel().flatRows
 
@@ -196,24 +141,7 @@ export const RowSelection = {
 
           return rowSelection
         }),
-      toggleRowSelected: (rowId, value) => {
-        const row = instance.getRow(rowId)
-        const isSelected = row.getIsSelected()
 
-        instance.setRowSelection(old => {
-          value = typeof value !== 'undefined' ? value : !isSelected
-
-          if (isSelected === value) {
-            return old
-          }
-
-          const selectedRowIds = { ...old }
-
-          mutateRowIsSelected(selectedRowIds, rowId, value, instance)
-
-          return selectedRowIds
-        })
-      },
       // addRowSelectionRange: rowId => {
       //   const {
       //     rows,
@@ -287,16 +215,15 @@ export const RowSelection = {
           return selectRowsFn(instance, rowModel)
         },
         {
-          key: 'getSelectedRowModel',
+          key: process.env.NODE_ENV === 'development' && 'getSelectedRowModel',
           debug: () => instance.options.debugAll ?? instance.options.debugTable,
-          onChange: () => instance._notifyExpandedReset(),
         }
       ),
 
       getFilteredSelectedRowModel: memo(
         () => [
           instance.getState().rowSelection,
-          instance.getGlobalFilteredRowModel(),
+          instance.getFilteredRowModel(),
         ],
         (rowSelection, rowModel) => {
           if (!Object.keys(rowSelection).length) {
@@ -310,9 +237,10 @@ export const RowSelection = {
           return selectRowsFn(instance, rowModel)
         },
         {
-          key: 'getFilteredSelectedRowModel',
+          key:
+            process.env.NODE_ENV === 'production' &&
+            'getFilteredSelectedRowModel',
           debug: () => instance.options.debugAll ?? instance.options.debugTable,
-          onChange: () => instance._notifyExpandedReset(),
         }
       ),
 
@@ -330,77 +258,14 @@ export const RowSelection = {
           return selectRowsFn(instance, rowModel)
         },
         {
-          key: 'getGroupedSelectedRowModel',
+          key:
+            process.env.NODE_ENV === 'production' &&
+            'getGroupedSelectedRowModel',
           debug: () => instance.options.debugAll ?? instance.options.debugTable,
-          onChange: () => instance._notifyExpandedReset(),
         }
       ),
 
       ///
-
-      getRowIsSelected: rowId => {
-        const { rowSelection } = instance.getState()
-        const row = instance.getRow(rowId)
-
-        if (!row) {
-          throw new Error()
-        }
-
-        return isRowSelected(row, rowSelection, instance) === true
-      },
-
-      getRowIsSomeSelected: rowId => {
-        const { rowSelection } = instance.getState()
-        const row = instance.getRow(rowId)
-
-        if (!row) {
-          throw new Error()
-        }
-
-        return isRowSelected(row, rowSelection, instance) === 'some'
-      },
-
-      getRowCanSelect: rowId => {
-        const row = instance.getRow(rowId)
-
-        if (!row) {
-          throw new Error()
-        }
-
-        if (typeof instance.options.enableRowSelection === 'function') {
-          return instance.options.enableRowSelection(row)
-        }
-
-        return instance.options.enableRowSelection ?? true
-      },
-
-      getRowCanSelectSubRows: rowId => {
-        const row = instance.getRow(rowId)
-
-        if (!row) {
-          throw new Error()
-        }
-
-        if (typeof instance.options.enableSubRowSelection === 'function') {
-          return instance.options.enableSubRowSelection(row)
-        }
-
-        return instance.options.enableSubRowSelection ?? true
-      },
-
-      getRowCanMultiSelect: rowId => {
-        const row = instance.getRow(rowId)
-
-        if (!row) {
-          throw new Error()
-        }
-
-        if (typeof instance.options.enableMultiRowSelection === 'function') {
-          return instance.options.enableMultiRowSelection(row)
-        }
-
-        return instance.options.enableMultiRowSelection ?? true
-      },
 
       // getGroupingRowCanSelect: rowId => {
       //   const row = instance.getRow(rowId)
@@ -417,8 +282,7 @@ export const RowSelection = {
       // },
 
       getIsAllRowsSelected: () => {
-        const preFilteredFlatRows =
-          instance.getPreGlobalFilteredRowModel().flatRows
+        const preFilteredFlatRows = instance.getPreFilteredRowModel().flatRows
         const { rowSelection } = instance.getState()
 
         let isAllRowsSelected = Boolean(
@@ -464,96 +328,94 @@ export const RowSelection = {
           : !!paginationFlatRows?.length
       },
 
-      getToggleRowSelectedProps: (rowId, userProps) => {
-        const row = instance.getRow(rowId)
-
-        const isSelected = row.getIsSelected()
-        const isSomeSelected = row.getIsSomeSelected()
-        const canSelect = row.getCanSelect()
-
-        const initialProps: ToggleRowSelectedProps = {
-          onChange: canSelect
-            ? (e: MouseEvent | TouchEvent) => {
-                row.toggleSelected((e.target as HTMLInputElement).checked)
-              }
-            : undefined,
-          checked: isSelected,
-          title: 'Toggle Row Selected',
-          indeterminate: isSomeSelected,
-          // onChange: forInput
-          //   ? (e: Event) => e.stopPropagation()
-          //   : (e: Event) => {
-          //       if (instance.options.isAdditiveSelectEvent(e)) {
-          //         row.toggleSelected()
-          //       } else if (instance.options.isInclusiveSelectEvent(e)) {
-          //         instance.addRowSelectionRange(row.id)
-          //       } else {
-          //         instance.setRowSelection({})
-          //         row.toggleSelected()
-          //       }
-
-          //       if (props.onClick) props.onClick(e)
-          //     },
+      getToggleAllRowsSelectedHandler: () => {
+        return (e: unknown) => {
+          instance.toggleAllRowsSelected(
+            ((e as MouseEvent).target as HTMLInputElement).checked
+          )
         }
-
-        return propGetter(initialProps, userProps)
       },
 
-      getToggleAllRowsSelectedProps: userProps => {
-        const isSomeRowsSelected = instance.getIsSomeRowsSelected()
-        const isAllRowsSelected = instance.getIsAllRowsSelected()
-
-        const initialProps: ToggleRowSelectedProps = {
-          onChange: (e: MouseEvent | TouchEvent) => {
-            instance.toggleAllRowsSelected(
-              (e.target as HTMLInputElement).checked
-            )
-          },
-          checked: isAllRowsSelected,
-          title: 'Toggle All Rows Selected',
-          indeterminate: isSomeRowsSelected,
+      getToggleAllPageRowsSelectedHandler: () => {
+        return (e: unknown) => {
+          instance.toggleAllPageRowsSelected(
+            ((e as MouseEvent).target as HTMLInputElement).checked
+          )
         }
-
-        return propGetter(initialProps, userProps)
-      },
-
-      getToggleAllPageRowsSelectedProps: userProps => {
-        const isSomePageRowsSelected = instance.getIsSomePageRowsSelected()
-        const isAllPageRowsSelected = instance.getIsAllPageRowsSelected()
-
-        const initialProps: ToggleRowSelectedProps = {
-          onChange: (e: MouseEvent | TouchEvent) => {
-            instance.toggleAllPageRowsSelected(
-              (e.target as HTMLInputElement).checked
-            )
-          },
-          checked: isAllPageRowsSelected,
-          title: 'Toggle All Current Page Rows Selected',
-          indeterminate: isSomePageRowsSelected,
-        }
-
-        return propGetter(initialProps, userProps)
       },
     }
   },
 
-  createRow: <TGenerics extends PartialGenerics>(
+  createRow: <TGenerics extends TableGenerics>(
     row: Row<TGenerics>,
     instance: TableInstance<TGenerics>
   ): RowSelectionRow => {
     return {
-      getIsSelected: () => instance.getRowIsSelected(row.id),
-      getIsSomeSelected: () => instance.getRowIsSomeSelected(row.id),
-      toggleSelected: value => instance.toggleRowSelected(row.id, value),
-      getToggleSelectedProps: userProps =>
-        instance.getToggleRowSelectedProps(row.id, userProps),
-      getCanMultiSelect: () => instance.getRowCanMultiSelect(row.id),
-      getCanSelect: () => instance.getRowCanSelect(row.id),
+      toggleSelected: value => {
+        const isSelected = row.getIsSelected()
+
+        instance.setRowSelection(old => {
+          value = typeof value !== 'undefined' ? value : !isSelected
+
+          if (isSelected === value) {
+            return old
+          }
+
+          const selectedRowIds = { ...old }
+
+          mutateRowIsSelected(selectedRowIds, row.id, value, instance)
+
+          return selectedRowIds
+        })
+      },
+      getIsSelected: () => {
+        const { rowSelection } = instance.getState()
+        return isRowSelected(row, rowSelection, instance) === true
+      },
+
+      getIsSomeSelected: () => {
+        const { rowSelection } = instance.getState()
+        return isRowSelected(row, rowSelection, instance) === 'some'
+      },
+
+      getCanSelect: () => {
+        if (typeof instance.options.enableRowSelection === 'function') {
+          return instance.options.enableRowSelection(row)
+        }
+
+        return instance.options.enableRowSelection ?? true
+      },
+
+      getCanSelectSubRows: () => {
+        if (typeof instance.options.enableSubRowSelection === 'function') {
+          return instance.options.enableSubRowSelection(row)
+        }
+
+        return instance.options.enableSubRowSelection ?? true
+      },
+
+      getCanMultiSelect: () => {
+        if (typeof instance.options.enableMultiRowSelection === 'function') {
+          return instance.options.enableMultiRowSelection(row)
+        }
+
+        return instance.options.enableMultiRowSelection ?? true
+      },
+      getToggleSelectedHandler: () => {
+        const canSelect = row.getCanSelect()
+
+        return (e: unknown) => {
+          if (!canSelect) return
+          row.toggleSelected(
+            ((e as MouseEvent).target as HTMLInputElement)?.checked
+          )
+        }
+      },
     }
   },
 }
 
-const mutateRowIsSelected = <TGenerics extends PartialGenerics>(
+const mutateRowIsSelected = <TGenerics extends TableGenerics>(
   selectedRowIds: Record<string, boolean>,
   id: string,
   value: boolean,
@@ -574,14 +436,14 @@ const mutateRowIsSelected = <TGenerics extends PartialGenerics>(
   }
   // }
 
-  if (row.subRows?.length && instance.getRowCanSelectSubRows(row.id)) {
+  if (row.subRows?.length && row.getCanSelectSubRows()) {
     row.subRows.forEach(row =>
       mutateRowIsSelected(selectedRowIds, row.id, value, instance)
     )
   }
 }
 
-export function selectRowsFn<TGenerics extends PartialGenerics>(
+export function selectRowsFn<TGenerics extends TableGenerics>(
   instance: TableInstance<TGenerics>,
   rowModel: RowModel<TGenerics>
 ): RowModel<TGenerics> {
@@ -591,7 +453,7 @@ export function selectRowsFn<TGenerics extends PartialGenerics>(
   const newSelectedRowsById: Record<string, Row<TGenerics>> = {}
 
   // Filters top level and nested rows
-  const recurseRows = (rows: Row<TGenerics>[], depth = 0) => {
+  const recurseRows = (rows: Row<TGenerics>[], depth = 0): Row<TGenerics>[] => {
     return rows
       .map(row => {
         const isSelected = isRowSelected(row, rowSelection, instance) === true
@@ -622,7 +484,7 @@ export function selectRowsFn<TGenerics extends PartialGenerics>(
   }
 }
 
-export function isRowSelected<TGenerics extends PartialGenerics>(
+export function isRowSelected<TGenerics extends TableGenerics>(
   row: Row<TGenerics>,
   selection: Record<string, boolean>,
   instance: TableInstance<TGenerics>

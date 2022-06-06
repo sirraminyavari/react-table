@@ -1,7 +1,7 @@
+import { TableFeature } from '../core/instance'
 import {
   OnChangeFn,
-  AnyGenerics,
-  PartialGenerics,
+  TableGenerics,
   TableInstance,
   RowModel,
   Updater,
@@ -11,35 +11,38 @@ import { functionalUpdate, makeStateUpdater, memo } from '../utils'
 export type PaginationState = {
   pageIndex: number
   pageSize: number
-  pageCount: number
+  pageCount?: number
 }
 
 export type PaginationTableState = {
   pagination: PaginationState
 }
 
-export type PaginationOptions<TGenerics extends PartialGenerics> = {
+export type PaginationInitialTableState = {
+  pagination?: Partial<PaginationState>
+}
+
+export type PaginationOptions<TGenerics extends TableGenerics> = {
+  manualPagination?: boolean
   onPaginationChange?: OnChangeFn<PaginationState>
   autoResetPageIndex?: boolean
-  paginateRowsFn?: (
-    instance: TableInstance<TGenerics>,
-    rowModel: RowModel<TGenerics>
-  ) => RowModel<TGenerics>
+  getPaginationRowModel?: (
+    instance: TableInstance<TGenerics>
+  ) => () => RowModel<TGenerics>
 }
 
 export type PaginationDefaultOptions = {
   onPaginationChange: OnChangeFn<PaginationState>
-  autoResetPageIndex: boolean
 }
 
-export type PaginationInstance<TGenerics extends PartialGenerics> = {
-  _notifyPageIndexReset: () => void
+export type PaginationInstance<TGenerics extends TableGenerics> = {
+  _autoResetPageIndex: () => void
   setPagination: (updater: Updater<PaginationState>) => void
-  resetPagination: () => void
+  resetPagination: (defaultState?: boolean) => void
   setPageIndex: (updater: Updater<number>) => void
-  resetPageIndex: () => void
+  resetPageIndex: (defaultState?: boolean) => void
   setPageSize: (updater: Updater<number>) => void
-  resetPageSize: () => void
+  resetPageSize: (defaultState?: boolean) => void
   setPageCount: (updater: Updater<number>) => void
   getPageOptions: () => number[]
   getCanPreviousPage: () => boolean
@@ -48,51 +51,65 @@ export type PaginationInstance<TGenerics extends PartialGenerics> = {
   nextPage: () => void
   getPrePaginationRowModel: () => RowModel<TGenerics>
   getPaginationRowModel: () => RowModel<TGenerics>
+  _getPaginationRowModel?: () => RowModel<TGenerics>
   getPageCount: () => number
 }
 
 //
 
-export const Pagination = {
-  getInitialState: (): PaginationTableState => {
+const defaultPageIndex = 0
+const defaultPageSize = 10
+
+const getDefaultPaginationState = (): PaginationState => ({
+  pageIndex: defaultPageIndex,
+  pageSize: defaultPageSize,
+})
+
+export const Pagination: TableFeature = {
+  getInitialState: (state): PaginationTableState => {
     return {
+      ...state,
       pagination: {
-        pageCount: -1,
-        pageIndex: 0,
-        pageSize: 10,
+        ...getDefaultPaginationState(),
+        ...state?.pagination,
       },
     }
   },
 
-  getDefaultOptions: <TGenerics extends PartialGenerics>(
+  getDefaultOptions: <TGenerics extends TableGenerics>(
     instance: TableInstance<TGenerics>
   ): PaginationDefaultOptions => {
     return {
       onPaginationChange: makeStateUpdater('pagination', instance),
-      autoResetPageIndex: true,
     }
   },
 
-  getInstance: <TGenerics extends PartialGenerics>(
+  createInstance: <TGenerics extends TableGenerics>(
     instance: TableInstance<TGenerics>
   ): PaginationInstance<TGenerics> => {
     let registered = false
-    return {
-      _notifyPageIndexReset: () => {
-        if (!registered) {
-          registered = true
-          return
-        }
+    let queued = false
 
-        if (instance.options.autoResetAll === false) {
+    return {
+      _autoResetPageIndex: () => {
+        if (!registered) {
+          instance._queue(() => {
+            registered = true
+          })
           return
         }
 
         if (
-          instance.options.autoResetAll === true ||
-          instance.options.autoResetPageIndex
+          instance.options.autoResetAll ??
+          instance.options.autoResetPageIndex ??
+          !instance.options.manualPagination
         ) {
-          instance.resetPageIndex()
+          if (queued) return
+          queued = true
+          instance._queue(() => {
+            instance.resetPageIndex()
+            queued = false
+          })
         }
       },
       setPagination: updater => {
@@ -102,18 +119,13 @@ export const Pagination = {
           return newState
         }
 
-        return instance.options.onPaginationChange?.(
-          safeUpdater,
-          functionalUpdate(safeUpdater, instance.getState().pagination)
-        )
+        return instance.options.onPaginationChange?.(safeUpdater)
       },
-      resetPagination: () => {
+      resetPagination: defaultState => {
         instance.setPagination(
-          instance.initialState.pagination ?? {
-            pageIndex: 0,
-            pageSize: 10,
-            pageCount: -1,
-          }
+          defaultState
+            ? getDefaultPaginationState()
+            : instance.initialState.pagination ?? getDefaultPaginationState()
         )
       },
       setPageIndex: updater => {
@@ -121,7 +133,7 @@ export const Pagination = {
           let pageIndex = functionalUpdate(updater, old.pageIndex)
 
           const maxPageIndex =
-            old.pageCount && old.pageCount > 0
+            typeof old.pageCount !== 'undefined'
               ? old.pageCount - 1
               : Number.MAX_SAFE_INTEGER
 
@@ -133,11 +145,19 @@ export const Pagination = {
           }
         })
       },
-      resetPageIndex: () => {
-        instance.setPageIndex(0)
+      resetPageIndex: defaultState => {
+        instance.setPageIndex(
+          defaultState
+            ? defaultPageIndex
+            : instance.initialState?.pagination?.pageIndex ?? defaultPageIndex
+        )
       },
-      resetPageSize: () => {
-        instance.setPageSize(instance.initialState?.pagination?.pageSize ?? 10)
+      resetPageSize: defaultState => {
+        instance.setPageSize(
+          defaultState
+            ? defaultPageSize
+            : instance.initialState?.pagination?.pageSize ?? defaultPageSize
+        )
       },
       setPageSize: updater => {
         instance.setPagination(old => {
@@ -154,7 +174,7 @@ export const Pagination = {
       },
       setPageCount: updater =>
         instance.setPagination(old => {
-          let newPageCount = functionalUpdate(updater, old.pageCount)
+          let newPageCount = functionalUpdate(updater, old.pageCount ?? -1)
 
           if (typeof newPageCount === 'number') {
             newPageCount = Math.max(-1, newPageCount)
@@ -179,7 +199,7 @@ export const Pagination = {
           return pageOptions
         },
         {
-          key: 'getPageOptions',
+          key: process.env.NODE_ENV === 'development' && 'getPageOptions',
           debug: () => instance.options.debugAll ?? instance.options.debugTable,
         }
       ),
@@ -187,7 +207,7 @@ export const Pagination = {
       getCanPreviousPage: () => instance.getState().pagination.pageIndex > 0,
 
       getCanNextPage: () => {
-        const { pageIndex, pageSize } = instance.getState().pagination
+        const { pageIndex } = instance.getState().pagination
 
         const pageCount = instance.getPageCount()
 
@@ -199,13 +219,7 @@ export const Pagination = {
           return false
         }
 
-        return (
-          pageIndex <
-          Math.ceil(
-            instance.getPrePaginationRowModel().rows.length / pageSize
-          ) -
-            1
-        )
+        return pageIndex < pageCount - 1
       },
 
       previousPage: () => {
@@ -219,28 +233,29 @@ export const Pagination = {
       },
 
       getPrePaginationRowModel: () => instance.getExpandedRowModel(),
-      getPaginationRowModel: memo(
-        () => [
-          instance.getState().pagination,
-          instance.getExpandedRowModel(),
-          instance.options.paginateRowsFn,
-        ],
-        (_pagination, rowModel, paginateRowsFn) => {
-          if (!paginateRowsFn || !rowModel.rows.length) {
-            return rowModel
-          }
-
-          return paginateRowsFn(instance, rowModel)
-        },
-        {
-          key: 'getPaginationRowModel',
-          debug: () => instance.options.debugAll ?? instance.options.debugTable,
+      getPaginationRowModel: () => {
+        if (
+          !instance._getPaginationRowModel &&
+          instance.options.getPaginationRowModel
+        ) {
+          instance._getPaginationRowModel =
+            instance.options.getPaginationRowModel(instance)
         }
-      ),
+
+        if (
+          instance.options.manualPagination ||
+          !instance._getPaginationRowModel
+        ) {
+          return instance.getPrePaginationRowModel()
+        }
+
+        return instance._getPaginationRowModel()
+      },
 
       getPageCount: () => {
         const { pageCount } = instance.getState().pagination
-        if (pageCount > 0) {
+
+        if (typeof pageCount !== 'undefined') {
           return pageCount
         }
 

@@ -1,53 +1,43 @@
 import { RowModel } from '..'
-import { BuiltInAggregationType, aggregationTypes } from '../aggregationTypes'
+import { BuiltInAggregationFn, aggregationFns } from '../aggregationFns'
+import { TableFeature } from '../core/instance'
 import {
   Cell,
   Column,
-  Getter,
   OnChangeFn,
-  PropGetterValue,
   TableInstance,
   Row,
   Updater,
-  AnyGenerics,
-  PartialGenerics,
   Renderable,
-  UseRenderer,
+  TableGenerics,
 } from '../types'
-import {
-  functionalUpdate,
-  isFunction,
-  makeStateUpdater,
-  memo,
-  Overwrite,
-  propGetter,
-} from '../utils'
+import { isFunction, makeStateUpdater, Overwrite } from '../utils'
 
 export type GroupingState = string[]
-
-export type AggregationFn<TGenerics extends PartialGenerics> = (
-  leafValues: TGenerics['Row'][],
-  childValues: TGenerics['Row'][]
-) => any
-
-export type CustomAggregationTypes<TGenerics extends PartialGenerics> = Record<
-  string,
-  AggregationFn<TGenerics>
->
-
-export type AggregationType<TGenerics extends PartialGenerics> =
-  | 'auto'
-  | BuiltInAggregationType
-  | keyof TGenerics['AggregationFns']
-  | AggregationFn<TGenerics>
 
 export type GroupingTableState = {
   grouping: GroupingState
 }
 
-export type GroupingColumnDef<TGenerics extends PartialGenerics> = {
-  aggregationType?: AggregationType<Overwrite<TGenerics, { Value: any }>>
-  aggregateValue?: (columnValue: unknown) => any
+export type AggregationFn<TGenerics extends TableGenerics> = (
+  columnId: string,
+  leafRows: Row<TGenerics>[],
+  childRows: Row<TGenerics>[]
+) => any
+
+export type CustomAggregationFns<TGenerics extends TableGenerics> = Record<
+  string,
+  AggregationFn<TGenerics>
+>
+
+export type AggregationFnOption<TGenerics extends TableGenerics> =
+  | 'auto'
+  | BuiltInAggregationFn
+  | keyof TGenerics['AggregationFns']
+  | AggregationFn<TGenerics>
+
+export type GroupingColumnDef<TGenerics extends TableGenerics> = {
+  aggregationFn?: AggregationFnOption<Overwrite<TGenerics, { Value: any }>>
   aggregatedCell?: Renderable<
     TGenerics,
     {
@@ -55,283 +45,208 @@ export type GroupingColumnDef<TGenerics extends PartialGenerics> = {
       row: Row<TGenerics>
       column: Column<TGenerics>
       cell: Cell<TGenerics>
-      value: TGenerics['Value']
+      getValue: () => TGenerics['Value']
     }
   >
   enableGrouping?: boolean
-  defaultCanGroup?: boolean
 }
 
-export type GroupingColumn<TGenerics extends PartialGenerics> = {
-  aggregationType?: AggregationType<Overwrite<TGenerics, { Value: any }>>
+export type GroupingColumn<TGenerics extends TableGenerics> = {
+  aggregationFn?: AggregationFnOption<Overwrite<TGenerics, { Value: any }>>
   getCanGroup: () => boolean
   getIsGrouped: () => boolean
   getGroupedIndex: () => number
   toggleGrouping: () => void
-  getToggleGroupingProps: <TGetter extends Getter<ToggleGroupingProps>>(
-    userProps?: TGetter
-  ) => undefined | PropGetterValue<ToggleGroupingProps, TGetter>
+  getToggleGroupingHandler: () => () => void
+  getAutoAggregationFn: () => AggregationFn<TGenerics> | undefined
+  getAggregationFn: () => AggregationFn<TGenerics> | undefined
 }
 
 export type GroupingRow = {
   groupingColumnId?: string
   groupingValue?: any
   getIsGrouped: () => boolean
+  _groupingValuesCache: Record<string, any>
 }
 
-export type GroupingCell<TGenerics extends PartialGenerics> = {
+export type GroupingCell<TGenerics extends TableGenerics> = {
   getIsGrouped: () => boolean
   getIsPlaceholder: () => boolean
   getIsAggregated: () => boolean
-  renderAggregatedCell: () => string | null | ReturnType<UseRenderer<TGenerics>>
+  renderAggregatedCell: () => string | null | TGenerics['Rendered']
 }
 
 export type ColumnDefaultOptions = {
   // Column
   onGroupingChange: OnChangeFn<GroupingState>
-  autoResetGrouping: boolean
   enableGrouping: boolean
 }
 
-export type GroupingOptions<TGenerics extends PartialGenerics> = {
-  aggregationTypes?: TGenerics['AggregationFns']
+export type GroupingOptions<TGenerics extends TableGenerics> = {
+  manualGrouping?: boolean
+  aggregationFns?: TGenerics['AggregationFns']
   onGroupingChange?: OnChangeFn<GroupingState>
-  autoResetGrouping?: boolean
   enableGrouping?: boolean
-  enableGroupingRemoval?: boolean
-  groupRowsFn?: (
-    instance: TableInstance<TGenerics>,
-    rowModel: RowModel<TGenerics>
-  ) => RowModel<TGenerics>
-
+  getGroupedRowModel?: (
+    instance: TableInstance<TGenerics>
+  ) => () => RowModel<TGenerics>
   groupedColumnMode?: false | 'reorder' | 'remove'
 }
 
 export type GroupingColumnMode = false | 'reorder' | 'remove'
 
-export type ToggleGroupingProps = {
-  title?: string
-  onClick?: (event: MouseEvent | TouchEvent) => void
-}
-
-export type GroupingInstance<TGenerics extends PartialGenerics> = {
-  _notifyGroupingReset: () => void
-  getColumnAutoAggregationFn: (
-    columnId: string
-  ) => AggregationFn<TGenerics> | undefined
-  getColumnAggregationFn: (
-    columnId: string
-  ) => AggregationFn<TGenerics> | undefined
+export type GroupingInstance<TGenerics extends TableGenerics> = {
   setGrouping: (updater: Updater<GroupingState>) => void
-  resetGrouping: () => void
-  toggleColumnGrouping: (columnId: string) => void
-  getColumnCanGroup: (columnId: string) => boolean
-  getColumnIsGrouped: (columnId: string) => boolean
-  getColumnGroupedIndex: (columnId: string) => number
-  getToggleGroupingProps: <TGetter extends Getter<ToggleGroupingProps>>(
-    columnId: string,
-    userProps?: TGetter
-  ) => undefined | PropGetterValue<ToggleGroupingProps, TGetter>
-  getRowIsGrouped: (rowId: string) => boolean
+  resetGrouping: (defaultState?: boolean) => void
   getPreGroupedRowModel: () => RowModel<TGenerics>
   getGroupedRowModel: () => RowModel<TGenerics>
+  _getGroupedRowModel?: () => RowModel<TGenerics>
 }
 
 //
 
-export const Grouping = {
-  getDefaultColumn: <
-    TGenerics extends PartialGenerics
+export const Grouping: TableFeature = {
+  getDefaultColumnDef: <
+    TGenerics extends TableGenerics
   >(): GroupingColumnDef<TGenerics> => {
     return {
-      aggregationType: 'auto',
+      aggregationFn: 'auto',
     }
   },
 
-  getInitialState: (): GroupingTableState => {
+  getInitialState: (state): GroupingTableState => {
     return {
       grouping: [],
+      ...state,
     }
   },
 
-  getDefaultOptions: <TGenerics extends PartialGenerics>(
+  getDefaultOptions: <TGenerics extends TableGenerics>(
     instance: TableInstance<TGenerics>
   ): GroupingOptions<TGenerics> => {
     return {
       onGroupingChange: makeStateUpdater('grouping', instance),
-      autoResetGrouping: true,
       groupedColumnMode: 'reorder',
     }
   },
 
-  createColumn: <TGenerics extends PartialGenerics>(
+  createColumn: <TGenerics extends TableGenerics>(
     column: Column<TGenerics>,
     instance: TableInstance<TGenerics>
   ): GroupingColumn<TGenerics> => {
     return {
-      aggregationType: column.aggregationType,
-      getCanGroup: () => instance.getColumnCanGroup(column.id),
-      getGroupedIndex: () => instance.getColumnGroupedIndex(column.id),
-      getIsGrouped: () => instance.getColumnIsGrouped(column.id),
-      toggleGrouping: () => instance.toggleColumnGrouping(column.id),
-      getToggleGroupingProps: userProps =>
-        instance.getToggleGroupingProps(column.id, userProps),
-    }
-  },
-
-  getInstance: <TGenerics extends PartialGenerics>(
-    instance: TableInstance<TGenerics>
-  ): GroupingInstance<TGenerics> => {
-    let registered = false
-
-    return {
-      _notifyGroupingReset: () => {
-        if (!registered) {
-          registered = true
-          return
-        }
-
-        if (instance.options.autoResetAll === false) {
-          return
-        }
-
-        if (
-          instance.options.autoResetAll === true ||
-          instance.options.autoResetGrouping
-        ) {
-          instance.resetGrouping()
-        }
-      },
-      getColumnAutoAggregationFn: columnId => {
-        const firstRow = instance.getCoreRowModel().flatRows[0]
-
-        const value = firstRow?.values[columnId]
-
-        if (typeof value === 'number') {
-          return aggregationTypes.sum
-        }
-
-        if (Object.prototype.toString.call(value) === '[object Date]') {
-          return aggregationTypes.extent
-        }
-
-        return aggregationTypes.count
-      },
-      getColumnAggregationFn: columnId => {
-        const column = instance.getColumn(columnId)
-        const userAggregationTypes = instance.options.aggregationTypes
-
-        if (!column) {
-          throw new Error()
-        }
-
-        return isFunction(column.aggregationType)
-          ? column.aggregationType
-          : column.aggregationType === 'auto'
-          ? instance.getColumnAutoFilterFn(columnId)
-          : (userAggregationTypes as Record<string, any>)?.[
-              column.aggregationType as string
-            ] ??
-            (aggregationTypes[
-              column.aggregationType as BuiltInAggregationType
-            ] as AggregationFn<TGenerics>)
-      },
-
-      setGrouping: updater =>
-        instance.options.onGroupingChange?.(
-          updater,
-          functionalUpdate(updater, instance.getState().grouping)
-        ),
-
-      toggleColumnGrouping: columnId => {
+      toggleGrouping: () => {
         instance.setGrouping(old => {
           // Find any existing grouping for this column
-          if (old?.includes(columnId)) {
-            return old.filter(d => d !== columnId)
+          if (old?.includes(column.id)) {
+            return old.filter(d => d !== column.id)
           }
 
-          return [...(old ?? []), columnId]
+          return [...(old ?? []), column.id]
         })
       },
 
-      getColumnCanGroup: columnId => {
-        const column = instance.getColumn(columnId)
-
-        if (!column) {
-          throw new Error()
-        }
-
+      getCanGroup: () => {
         return (
-          column.enableGrouping ??
+          column.columnDef.enableGrouping ??
+          true ??
           instance.options.enableGrouping ??
-          column.defaultCanGroup ??
+          true ??
           !!column.accessorFn
         )
       },
 
-      getColumnIsGrouped: columnId => {
-        return instance.getState().grouping?.includes(columnId)
+      getIsGrouped: () => {
+        return instance.getState().grouping?.includes(column.id)
       },
 
-      getColumnGroupedIndex: columnId =>
-        instance.getState().grouping?.indexOf(columnId),
+      getGroupedIndex: () => instance.getState().grouping?.indexOf(column.id),
 
-      resetGrouping: () => {
-        instance.setGrouping(instance.initialState?.grouping ?? [])
-      },
-
-      getToggleGroupingProps: (columnId, userProps) => {
-        const column = instance.getColumn(columnId)
-
+      getToggleGroupingHandler: () => {
         const canGroup = column.getCanGroup()
 
-        const initialProps: ToggleGroupingProps = {
-          title: canGroup ? 'Toggle Grouping' : undefined,
-          onClick: canGroup
-            ? (e: MouseEvent | TouchEvent) => {
-                column.toggleGrouping?.()
-              }
-            : undefined,
+        return () => {
+          if (!canGroup) return
+          column.toggleGrouping()
+        }
+      },
+      getAutoAggregationFn: () => {
+        const firstRow = instance.getCoreRowModel().flatRows[0]
+
+        const value = firstRow?.getValue(column.id)
+
+        if (typeof value === 'number') {
+          return aggregationFns.sum
         }
 
-        return propGetter(initialProps, userProps)
+        if (Object.prototype.toString.call(value) === '[object Date]') {
+          return aggregationFns.extent
+        }
+
+        return aggregationFns.count
+      },
+      getAggregationFn: () => {
+        const userAggregationFns = instance.options.aggregationFns
+
+        if (!column) {
+          throw new Error()
+        }
+
+        return isFunction(column.aggregationFn)
+          ? column.aggregationFn
+          : column.aggregationFn === 'auto'
+          ? column.getAutoAggregationFn()
+          : (userAggregationFns as Record<string, any>)?.[
+              column.aggregationFn as string
+            ] ??
+            (aggregationFns[
+              column.aggregationFn as BuiltInAggregationFn
+            ] as AggregationFn<TGenerics>)
+      },
+    }
+  },
+
+  createInstance: <TGenerics extends TableGenerics>(
+    instance: TableInstance<TGenerics>
+  ): GroupingInstance<TGenerics> => {
+    return {
+      setGrouping: updater => instance.options.onGroupingChange?.(updater),
+
+      resetGrouping: defaultState => {
+        instance.setGrouping(
+          defaultState ? [] : instance.initialState?.grouping ?? []
+        )
       },
 
-      getRowIsGrouped: rowId => !!instance.getRow(rowId)?.groupingColumnId,
-
       getPreGroupedRowModel: () => instance.getSortedRowModel(),
-      getGroupedRowModel: memo(
-        () => [
-          instance.getState().grouping,
-          instance.getSortedRowModel(),
-          instance.options.groupRowsFn,
-        ],
-        (grouping, rowModel, groupRowsFn) => {
-          if (!groupRowsFn || !grouping.length) {
-            return rowModel
-          }
-
-          return groupRowsFn(instance, rowModel)
-        },
-        {
-          key: 'getGroupedRowModel',
-          debug: () => instance.options.debugAll ?? instance.options.debugTable,
-          onChange: () => instance._notifyExpandedReset(),
+      getGroupedRowModel: () => {
+        if (
+          !instance._getGroupedRowModel &&
+          instance.options.getGroupedRowModel
+        ) {
+          instance._getGroupedRowModel =
+            instance.options.getGroupedRowModel(instance)
         }
-      ),
+
+        if (instance.options.manualGrouping || !instance._getGroupedRowModel) {
+          return instance.getPreGroupedRowModel()
+        }
+
+        return instance._getGroupedRowModel()
+      },
     }
   },
 
-  createRow: <TGenerics extends PartialGenerics>(
-    row: Row<TGenerics>,
-    instance: TableInstance<TGenerics>
+  createRow: <TGenerics extends TableGenerics>(
+    row: Row<TGenerics>
   ): GroupingRow => {
     return {
-      getIsGrouped: () => instance.getRowIsGrouped(row.id),
+      getIsGrouped: () => !!row.groupingColumnId,
+      _groupingValuesCache: {},
     }
   },
 
-  createCell: <TGenerics extends PartialGenerics>(
+  createCell: <TGenerics extends TableGenerics>(
     cell: Cell<TGenerics>,
     column: Column<TGenerics>,
     row: Row<TGenerics>,
@@ -346,42 +261,43 @@ export const Grouping = {
         !cell.getIsPlaceholder() &&
         row.subRows?.length > 1,
       renderAggregatedCell: () => {
-        const template = column.aggregatedCell ?? column.cell
+        const template =
+          column.columnDef.aggregatedCell ?? column.columnDef.cell
 
         return template
-          ? instance.render(template, {
+          ? instance._render(template, {
               instance,
               column,
               row,
               cell,
-              value: cell.value,
+              getValue: cell.getValue,
             })
           : null
       },
     }
   },
+}
 
-  orderColumns: <TGenerics extends PartialGenerics>(
-    leafColumns: Column<TGenerics>[],
-    grouping: string[],
-    groupedColumnMode?: GroupingColumnMode
-  ) => {
-    if (!grouping?.length || !groupedColumnMode) {
-      return leafColumns
-    }
+export function orderColumns<TGenerics extends TableGenerics>(
+  leafColumns: Column<TGenerics>[],
+  grouping: string[],
+  groupedColumnMode?: GroupingColumnMode
+) {
+  if (!grouping?.length || !groupedColumnMode) {
+    return leafColumns
+  }
 
-    const nonGroupingColumns = leafColumns.filter(
-      col => !grouping.includes(col.id)
-    )
+  const nonGroupingColumns = leafColumns.filter(
+    col => !grouping.includes(col.id)
+  )
 
-    if (groupedColumnMode === 'remove') {
-      return nonGroupingColumns
-    }
+  if (groupedColumnMode === 'remove') {
+    return nonGroupingColumns
+  }
 
-    const groupingColumns = grouping
-      .map(g => leafColumns.find(col => col.id === g)!)
-      .filter(Boolean)
+  const groupingColumns = grouping
+    .map(g => leafColumns.find(col => col.id === g)!)
+    .filter(Boolean)
 
-    return [...groupingColumns, ...nonGroupingColumns]
-  },
+  return [...groupingColumns, ...nonGroupingColumns]
 }
