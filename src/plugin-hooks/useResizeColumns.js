@@ -44,6 +44,7 @@ const defaultGetResizerProps = (props, { instance, header }) => {
       }
       isTouchEvent = true
     }
+    const isRtl = window.getComputedStyle(e.target, null).direction === 'rtl';
     const headersToResize = getLeafHeaders(header)
     const headerIdWidths = headersToResize.map(d => [d.id, d.totalWidth])
 
@@ -60,7 +61,7 @@ const defaultGetResizerProps = (props, { instance, header }) => {
     const dispatchMove = () => {
       window.cancelAnimationFrame(raf)
       raf = null
-      dispatch({ type: actions.columnResizing, clientX: mostRecentClientX })
+      dispatch({ type: actions.columnResizing,isRtl, clientX: mostRecentClientX })
     }
 
     const scheduleDispatchMoveOnNextAnimationFrame = clientXPos => {
@@ -189,12 +190,12 @@ function reducer(state, action) {
   }
 
   if (action.type === actions.columnResizing) {
-    const { clientX } = action
+    const { clientX ,isRtl} = action
     const { startX, columnWidth, headerIdWidths = [] } = state.columnResizing
 
     const deltaX = clientX - startX
-    const percentageDeltaX = deltaX / columnWidth
-
+    const percentageDeltaX = isRtl ? -1 * deltaX / columnWidth : deltaX / columnWidth
+    
     const newColumnWidths = {}
 
     headerIdWidths.forEach(([headerId, headerWidth]) => {

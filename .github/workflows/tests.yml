@@ -5,7 +5,7 @@ on:
     branches:
       - "master"
       - "next"
-      - "6.x"
+      - "7.x"
   pull_request:
 
 jobs:
@@ -27,8 +27,6 @@ jobs:
   publish-module:
     name: "Publish Module to NPM"
     needs: test
-    # publish only when merged in master on original repo, not on PR
-    if: github.repository == 'tannerlinsley/react-table' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/next' || github.ref == 'refs/heads/6.x')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -41,4 +39,4 @@ jobs:
       - run: npx semantic-release@17
         env:
           NODE_AUTH_TOKEN: ${{secrets.npm_token}}
-          GH_TOKEN: ${{secrets.GH_TOKEN}}
+          GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
